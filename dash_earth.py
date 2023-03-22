@@ -10,11 +10,14 @@ import numpy as np
 import pandas as pd
 from chatgpt_api import chatbot
 from folium import plugins
+from geopy.distance import distance, geodesic
+
 from dash_iconify import DashIconify
 import dash_mantine_components as dmc
 from plotly import graph_objects as go
 from plotly.subplots import make_subplots
 import dash_leaflet as dl
+from folium.plugins import MeasureControl
 from dash import no_update
 import dash_leaflet.express as dlx
 from folium.plugins import MarkerCluster
@@ -31,13 +34,20 @@ import dash_bootstrap_components as dbc
 
 import plotly.express as px
 
-geo_df = pd.read_csv("earthquake.csv", index_col=0, low_memory=False)
+geo_df = pd.read_csv("earthquake.csv", index_col=0, low_memory=True)
 geo_df.drop_duplicates(keep='first', inplace=True)
 geo_df = geo_df.dropna(subset=['City'])
 geo_df = geo_df.sort_values(by = 'City')
 geo_df.reset_index(inplace=True, drop = True)
+## downcasting loop
+for column in geo_df:
+    if geo_df[column].dtype == 'float64':
+        geo_df[column]=pd.to_numeric(geo_df[column], downcast='float')
+    if geo_df[column].dtype == 'int64':
+        geo_df[column]=pd.to_numeric(geo_df[column], downcast='integer')
 
-
+## dropping an unused column
+geo_df = geo_df.drop('geometry',axis =1)
 
 mapbox_access_token = 'pk.eyJ1IjoiY2V5aHVuMjA4NiIsImEiOiJjbGZiaTJ4MXoya2diM3RvMTBic3N3Y3A5In0._4OoIx3hlf1l0eEeiCnSRQ'
 
@@ -275,6 +285,8 @@ chart_type_options = ["satellite-streets","carto-darkmatter", "carto-positron", 
                       "basic", "streets", "outdoors", "light", "dark", "satellite",
                       ]
 
+chart_type_folium = ["OpenStreetMap", "Stamen", "CartoDB" ]
+
 # Layout design
 app.layout = html.Div(
     children = [
@@ -317,6 +329,17 @@ app.layout = html.Div(
                                   placeholder='Select Town ...',
 
                                   ),
+                    dcc.Dropdown (id='radiograph',
+                                  options=[{ 'label': i, 'value': i }
+                                           for i in ['mapbox', 'density', 'folium']],
+                                  value='mapbox',
+                                  multi=False,
+                                  style={ 'cursor': 'pointer', 'margin': '5px', 'borderRadius': '1rem', 'width' : '30rem' },
+                                  clearable=True,
+                                  searchable=True,
+                                  placeholder='Select Map type ...',
+
+                                  ),
 
                     html.Div(id = 'third_ligne_dd', children = [
                                   dcc.Dropdown (id='date_type',
@@ -328,7 +351,7 @@ app.layout = html.Div(
                         dcc.Dropdown (id='chart_type',
                                   options=[{ 'label': i, 'value': i }
                                            for i in chart_type_options],
-                                  value = "satellite-streets",
+
                                   style={ 'cursor': 'pointer', 'margin':'2px', 'width' : '20rem', 'borderRadius': '1rem' },
                                   clearable=True,
                                   placeholder='Select chart type ...',
@@ -343,20 +366,6 @@ app.layout = html.Div(
                                )
 
                     ], className='dropdown-header'),
-                        dcc.RadioItems(id="radiograph",
-                                     options=[
-                                         {'label': 'scatter', 'value': 'mapbox'},
-                                         {'label': 'density mapbox', 'value': 'density'},
-                                         {'label': 'cloropleth', 'value': 'cloropleth'},
-                                         {'label': 'folium', 'value': 'folium'},
-
-
-
-                                     ],
-                                     value='mapbox',
-                                     labelStyle={'margin': '10px', 'display': 'inline-block'},
-                                     inputStyle={'margin': '10px', }
-                                     ),
                     dcc.Graph (id="graph1",config = config),
                     html.Div(id='folium_graph'),
 
@@ -375,6 +384,18 @@ app.layout = html.Div(
 )
 
 
+
+@app.callback(
+    [Output("chart_type", "options"),Output("chart_type", "value")],
+    Input("radiograph", "value"),
+)
+
+def chart_options(value1):
+    if value1 == None:
+        raise PreventUpdate
+    if value1 == 'mapbox' or value1 == 'density':
+        return [{ 'label': i, 'value': i } for i in chart_type_options], 'satellite-streets'
+    return [{ 'label': i, 'value': i } for i in chart_type_folium ],'OpenStreetMap'
 
 
 @app.callback(
@@ -446,6 +467,7 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
                Input("valtown", "value")])
 def update_graph(value1,value2):
     print('render4')
+
 
     if value1 == None and value2 == None :
         raise PreventUpdate
@@ -579,45 +601,181 @@ def update_graph3(value1,value2, value3, value4, radio):
 
         return fig,{'visibility':'visible'}, {}, fb(df, value1)
 
-    if radio == 'cloropleth':
-        fig = px.choropleth_mapbox (df,
-                             locations='City',
-                             geojson= df.index,
-                             color='magnitude',
-                             color_continuous_scale='spectral_r',
-                             hover_name='City',
-                             mapbox_style=value4,
-                             center=dict (lat=40.0, lon=35.0),
-                             zoom=5,
-                             )
 
-        fig.add_scattergeo (
-            #locations=df['City'],
-            text=df['City'],
-            lat=df["lat"],
-            lon=df["long"],
-           # hoverinfo=["City","date", "time", "magnitude"],
-            #hoverlabel=["date", "time", "magnitude"],
-            mode='text')
-
-
-        fig.update_layout (margin={ "r": 0, "t": 0, "l": 0, "b": 0 }, )
-        fig.update_layout (mapbox_bounds={ "west": 20, "east": 48, "south": 30, "north": 45 })
-
-        return fig,{'visibility':'visible'},{}, fb(df, value1)
 
     if radio == 'folium':
         my_coordinates = [(row['lat'], row['long']) for index, row in df.iterrows ()][0]
-        m = folium.Map (location=my_coordinates,zoom_start=10)
+        m = folium.Map([39.849, 32.849], zoom_start=5, tiles=value4, attr='my_own_folium')
 
-        # add a marker for each city
-        for index, row in df.iterrows ():
-            folium.Marker (location=[row['lat'], row['long']], popup=row['City']).add_to (m)
+        print(my_coordinates)
+
+
+
+
+
+        from jinja2 import Template
+        from folium.map import Marker
+
+        tmpldata = """<!-- monkey patched Marker template -->
+        {% macro script(this, kwargs) %}
+            var {{ this.get_name() }} = L.marker(
+                {{ this.location|tojson }},
+                {{ this.options|tojson }}
+            ).addTo({{ this._parent.get_name() }}).on('click', onClick);
+        {% endmacro %}
+        """
+
+        Marker._mytemplate = Template (tmpldata)
+
+        def myMarkerInit(self, *args, **kwargs):
+            self.__init_orig__ (*args, **kwargs)
+            self._template = self._mytemplate
+
+        Marker.__init_orig__ = Marker.__init__
+        Marker.__init__ = myMarkerInit
+
+
+            # add a marker for each city
+
+        from folium.plugins import MarkerCluster
+
+        # create a feature group for markers
+        marker_group = MarkerCluster ()
+
+        # loop through the first 10 rows of the dataframe
+        try :
+
+            for index, row in df.head (10).iterrows ():
+                marker1 = folium.Marker (location=[row['lat'], row['long']], popup=row['City'],
+                                        icon=folium.Icon (color='red'))
+                marker1.add_to (marker_group)
+        except RecursionError as err:
+            if err.args[0] != 'maximum recursion depth exceeded in comparison':
+                # different type of runtime error
+                raise
+            print ('Sorry but this marker was not able to finish '
+                   'analyzing: {}'.format (err.args[0]))
+
+        # add the marker group to the map
+        marker_group.add_to (m)
+
+        el = folium.MacroElement ().add_to (m)
+        el._template = Template ("""
+            {% macro script(this, kwargs) %}
+            function copy(text) {
+                var input = document.createElement('textarea');
+                input.innerHTML = text;
+                document.body.appendChild(input);
+                input.select();
+                var result = document.execCommand('copy');
+                document.body.removeChild(input);
+                return result;
+            };
+
+            function getInnerText( sel ) {
+                var txt = '';
+                $( sel ).contents().each(function() {
+                    var children = $(this).children();
+                    txt += ' ' + this.nodeType === 3 ? this.nodeValue : children.length ? getInnerText( this ) : $(this).text();
+                });
+                return txt;
+            };
+
+            function onClick(e) {
+               var popup = e.target.getPopup();
+               var content = popup.getContent();
+               text = getInnerText(content);
+  
+               copy(text);
+            };
+            {% endmacro %}
+        """)
 
         plugins.MiniMap ().add_to (m)
         plugins.Geocoder ().add_to (m)
 
+        # mesafeyi hesaplama
+        #if marker1 is not None and marker2 is not None:
+        #    dist = geodesic ((marker1.location[0], marker1.location[1]), (marker2.location[0], marker2.location[1])).km
+        #    print (f"Mesafe: {dist:.2f} km")
 
+
+
+        marker2 = folium.Marker (
+            location=[38.0, 40.0],
+            popup=f'<p id="latlon">{38.0}, {40.0}</p>',
+            className='leaflet-marker-draggable',
+
+            draggable=True
+            ).add_to (m)
+
+        el1 = folium.MacroElement ().add_to (m)
+        el1._template = Template ("""
+            {% macro script(this, kwargs) %}
+            function copy(text) {
+                var input = document.createElement('textarea');
+                input.innerHTML = text;
+                document.body.appendChild(input);
+                input.select();
+                var result = document.execCommand('copy');
+                document.body.removeChild(input);
+                return result;
+            };
+
+            function onClick(e) {
+               var lat = e.latlng.lat; 
+               var lng = e.latlng.lng;
+               var newContent = '<p id="latlon">' + lat + ', ' + lng + '</p>';
+               e.target.setPopupContent(newContent);
+               e.target.setLatLng([lat,lng]);
+               lat, lng = e.target.location;
+               
+               copy(lat + ', ' + lng);
+            };
+            {% endmacro %}
+        """)
+
+        # İşaretçinin konumunu güncellemek için bir fonksiyon oluşturun
+        def update_marker_location(e):
+            lat, lng = e['target']['_latlng']
+            marker2.set_location ([lat, lng])
+
+        # İşaretçinin sürükleme olayına bir dinleyici ekleyin
+        marker2.add_child (folium.Popup ("Initial location: {}, {}".format (marker2.location[0], marker2.location[1])))
+        m.get_root ().html.add_child (folium.Element ("""
+        <script>
+            var marker = document.getElementsByClassName('leaflet-marker-draggable')[0];
+            marker.addEventListener('dragend', function(e) {
+                window.dispatchEvent(new CustomEvent('markerMoved', { detail: e }));
+            });
+        </script>
+        """))
+
+        # İşaretçinin sürükleme olayı tamamlandığında tetiklenecek özel bir etkinlik oluşturun
+        m.get_root ().html.add_child (folium.Element ("""
+        <script>
+            window.addEventListener('markerMoved', function(e) {
+                var eventDetail = e.detail;
+                updateMarkerLocation(eventDetail);
+            });
+        </script>
+        """))
+
+        from folium.plugins import MousePosition
+
+        formatter = "function(num) {return L.Util.formatNum(num, 3) + ' º ';};"
+        MousePosition (
+            position="topright",
+            separator=" | ",
+            empty_string="NaN",
+            lng_first=True,
+            num_digits=20,
+            prefix="Coordinates:",
+            lat_formatter=formatter,
+            lng_formatter=formatter,
+        ).add_to (m)
+
+        print(marker2.location[0])
 
 
         m.save ('ceyhun.html')
