@@ -10,8 +10,11 @@ import numpy as np
 import pandas as pd
 from chatgpt_api import chatbot
 from folium import plugins
+from folium.plugins import MarkerCluster
 from geopy.distance import distance, geodesic
-
+from dash.long_callback import DiskcacheLongCallbackManager
+from jinja2 import Template
+from folium.map import Marker
 from dash_iconify import DashIconify
 import dash_mantine_components as dmc
 from plotly import graph_objects as go
@@ -28,7 +31,7 @@ from shapely.geometry.polygon import Polygon
 
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
-from dash import Dash, dcc, html, State, Input, Output
+from dash import Dash,dcc, html, State, Input, Output
 import dash_bootstrap_components as dbc
 #from dash_bootstrap_components._components.Container import Container
 
@@ -50,6 +53,11 @@ for column in geo_df:
 geo_df = geo_df.drop('geometry',axis =1)
 
 mapbox_access_token = 'pk.eyJ1IjoiY2V5aHVuMjA4NiIsImEiOiJjbGZiaTJ4MXoya2diM3RvMTBic3N3Y3A5In0._4OoIx3hlf1l0eEeiCnSRQ'
+
+## Diskcache
+import diskcache
+cache = diskcache.Cache("./cache")
+long_callback_manager = DiskcacheLongCallbackManager(cache)
 
 
 BS =[ "https://stackpath.bootstrapcdn.com/bootstrap/4.5.1/css/bootstrap.min.css",
@@ -76,6 +84,7 @@ def find_data_file(filename):
 config = { 'displayModeBar': True,
            'scrollZoom': True,
            'displaylogo': False,
+           "responsive" : True,
            'modeBarButtonsToAdd': [
                'drawopenpath',
                'drawcircle',
@@ -86,7 +95,7 @@ config = { 'displayModeBar': True,
 # Initialize the app
 app = dash.Dash(__name__,external_stylesheets=BS,suppress_callback_exceptions=True, assets_folder=find_data_file('assets/'),update_title='Loading...',
                 meta_tags=[{'name': 'viewport', 'content': 'width=device-width, initial-scale=2.0, maximum-scale=1.2, minimum-scale=0.5'}],
-                )
+                long_callback_manager=long_callback_manager)
 server = app.server
 
 app.config.suppress_callback_exceptions = True
@@ -113,9 +122,9 @@ def darkModeToggle():
 
 search_bar = dbc.Row(
     [
-        dbc.Col(dbc.Input(id = 'chatgptquestion',type="search", placeholder="Search")),
+        dbc.Col(dbc.Input(id = 'chatgptquestion',type="search",inputMode=True, placeholder="Chat with CHATGPT")),
         dbc.Col(
-            dbc.Button ("Search",id='search',
+            dbc.Button ("Start",id='search',
                  color="primary", className="ms-2", n_clicks=0
             ),
 
@@ -210,14 +219,14 @@ navbar = dbc.Navbar(
 )
 
 @app.callback(
-    Output('themeHolder','theme'),
+    [Output('themeHolder','theme'),Output('graph_theme','style')],
     Input('themeSwitch','checked'),
 )
 def darkMode(checked):
     if checked:
-        return {"colorScheme": "dark"}
+        return {"colorScheme": "dark"}, { 'backgroundColor': '#1a1b1e' }
     else:
-        return {"colorScheme": "light"}
+        return {"colorScheme": "light"},{ 'backgroundColor': 'white' }
 
 # add callback for toggling the collapse on small screens
 @app.callback(
@@ -285,7 +294,7 @@ chart_type_options = ["satellite-streets","carto-darkmatter", "carto-positron", 
                       "basic", "streets", "outdoors", "light", "dark", "satellite",
                       ]
 
-chart_type_folium = ["OpenStreetMap", "Stamen", "CartoDB" ]
+chart_type_folium = ["OpenStreetMap", "Stamen Terrain", "CartoDB Positron","stamentoner" ]
 
 # Layout design
 app.layout = html.Div(
@@ -331,7 +340,7 @@ app.layout = html.Div(
                                   ),
                     dcc.Dropdown (id='radiograph',
                                   options=[{ 'label': i, 'value': i }
-                                           for i in ['mapbox', 'density', 'folium']],
+                                           for i in ['mapbox','cloropleth', 'density', 'folium']],
                                   value='mapbox',
                                   multi=False,
                                   style={ 'cursor': 'pointer', 'margin': '5px', 'borderRadius': '1rem', 'width' : '30rem' },
@@ -342,44 +351,33 @@ app.layout = html.Div(
                                   ),
 
                     html.Div(id = 'third_ligne_dd', children = [
-                                  dcc.Dropdown (id='date_type',
-                                  options=[],
-                                  style={ 'cursor': 'pointer', 'margin':'2px', 'width' : '20rem', 'borderRadius': '1rem' },
-                                  clearable=True,
-                                  placeholder='Select datetime ...',
-                                  ),
+                                  dcc.Dropdown (  id='date_type',
+                                                  options=[],
+                                                  style={ 'cursor': 'pointer', 'margin':'2px', 'width' : '20rem', 'borderRadius': '1rem' },
+                                                  clearable=True,
+                                                  placeholder='Select datetime ...',
+                                                  ),
                         dcc.Dropdown (id='chart_type',
-                                  options=[{ 'label': i, 'value': i }
-                                           for i in chart_type_options],
+                                  options=[],
 
                                   style={ 'cursor': 'pointer', 'margin':'2px', 'width' : '20rem', 'borderRadius': '1rem' },
                                   clearable=True,
                                   placeholder='Select chart type ...',
                                   ),
-                        dcc.RadioItems(id="coordinate",
-                               options=[
-                                   {'label': 'Coordinate', 'value': 'coordinate'},
-                                   ],
-                               labelClassName='groupgraph2',
-                               labelStyle={'margin': '10px'},
-                               inputStyle={'margin': '10px'}
-                               )
 
                     ], className='dropdown-header'),
-                    dcc.Graph (id="graph1",config = config),
-                    html.Div(id='folium_graph'),
-
 
                 ]),
                 width={ "size": 6 },
-            ),
-            dbc.Col ([
-                html.Div (id = 'leaflet'),
-                dcc.Graph(id="graph2",config = config)],
-                width={ "size": 6 },style={'marginTop':'24vh', 'backgroundColor': 'black'}
-            )
-        ],
-        )
+            ),]),
+            dbc.Row([
+                dbc.Col([dcc.Graph (id="graph1",config = config),
+                        html.Div(id='folium_graph')],width={ "size": 6 }),
+                dbc.Col (id = 'graph_theme',children = [
+                    dcc.Graph(id="graph2",config = config, style={'visibility':'hidden'})],
+                    width={ "size": 6})
+        ],justify="around"),
+
     ],
 )
 
@@ -424,8 +422,8 @@ def create_modal(x,question, response):
 @app.callback(
     [Output("conversation-container", "children"),Output("questions_val", "children"),Output("response_val", "children")],
     [Input("chatgptquestion", "value"),
-    Input("search", "n_clicks"),Input("submit-button", "n_clicks")],
-     [State("user-input", "value"), State("questions_val", "children"),State("response_val", "children"),State("modal-lg", "is_open")]
+     Input("search", "n_clicks"),Input("submit-button", "n_clicks")],
+    [State("user-input", "value"), State("questions_val", "children"),State("response_val", "children"),State("modal-lg", "is_open")]
 )
 
 def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
@@ -436,17 +434,26 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
 
 
     if button_click == 'search' :
-        question.append(value1)
-        response.append(chatbot(value1))
+        print ('value1', value1)
+        print('value1',chatbot(value1))
+        question.append(value1) # add search bar question to question list ===>   ['']
+        print(question)
+        response.append(chatbot(value1)) # add response, response of the search chat ===>  ['']
 
         x = len(question)
         return create_modal (x, question, response), question, response
 
     if button_click == 'submit-button' :
 
+        print('balue2', value2)
+        question.append (value2)
 
-        question.append(value2)
+        print('question2',question)
         final_val = ''.join(i for i in question)
+
+
+
+        print('final_val', final_val)
 
         response.append(chatbot (final_val))
 
@@ -507,15 +514,22 @@ def update_graph2(value1,value2):
 
 
 
-@app.callback([Output("graph1", "figure"),Output("graph1", "style"),
-               Output("folium_graph", "children"), Output("graph2", "figure")],
+@app.long_callback(
+              [Output("graph1", "figure"),
+               Output("graph1", "style"),
+               Output("folium_graph", "children"),
+               Output("graph2", "figure"),
+               Output("graph2", "style")],
               [Input("valcity", "value"),
                Input("valtown", "value"),
                Input("date_type", "value"),
                Input("chart_type", "value"),
-               Input("radiograph", 'value')])
-def update_graph3(value1,value2, value3, value4, radio):
-    print('render6')
+               Input("radiograph", 'value'),
+               Input('themeSwitch','checked'),])
+def update_graph3(value1,value2, value3, value4, radio, checked):
+
+    time.sleep(3)
+
 
     #if value1 == None or value2 == None or value3 == None or value4 == None:
         #raise PreventUpdate
@@ -537,6 +551,7 @@ def update_graph3(value1,value2, value3, value4, radio):
 
     if value1 != None and value2 == None and value3 == None :
         df = geo_df[geo_df['City'] == value1]
+
         #df = df[df['Town'] == value2]
         #df = df[df['date'] == value3]
 
@@ -548,8 +563,8 @@ def update_graph3(value1,value2, value3, value4, radio):
 
     if value1 == None and value2 == None and value3 == None :
         df = geo_df
-
-
+    print ('dffff', df)
+    df['City'] = df['City'].apply(lambda c: c.capitalize())
     min = abs(float(df['magnitude'].min()))
 
     max = float(df['magnitude'].max())
@@ -560,6 +575,7 @@ def update_graph3(value1,value2, value3, value4, radio):
 
     if radio == 'density':
 
+
         fig = px.density_mapbox (
                 df,
                 lat="lat",
@@ -568,7 +584,7 @@ def update_graph3(value1,value2, value3, value4, radio):
                 hover_data=["date","time", "magnitude"],
                 range_color= [min, max],
                 color_continuous_scale=px.colors.sequential.Viridis,
-                zoom=8,
+                zoom=4,
                 radius=25,
                 height=440,
 
@@ -579,9 +595,10 @@ def update_graph3(value1,value2, value3, value4, radio):
         fig.update_layout (mapbox_bounds={ "west": 20, "east": 48, "south": 30, "north": 45 })
 
 
-        return fig,{'visibility':'visible'},{},fb(df, value1)
+        return fig,{'visibility':'visible'},{},fb(df, value1, checked),{'visibility':'visible'}
 
     if radio == 'mapbox' :
+        print ('burdaki df ne oluyor', df)
         fig = px.scatter_mapbox (
             df,
             lat="lat",
@@ -589,8 +606,8 @@ def update_graph3(value1,value2, value3, value4, radio):
             hover_name="City",
             hover_data=["date", "time", "magnitude"],
             range_color=[min, max],
-            color_continuous_scale=px.colors.sequential.Viridis,
-            zoom=8,
+            color_discrete_sequence=["fuchsia"],
+            zoom=4,
             height=440,
 
         )
@@ -599,22 +616,36 @@ def update_graph3(value1,value2, value3, value4, radio):
         fig.update_layout (margin={ "r": 0, "t": 0, "l": 0, "b": 0 }, )
         fig.update_layout (mapbox_bounds={ "west": 20, "east": 48, "south": 30, "north": 45 })
 
-        return fig,{'visibility':'visible'}, {}, fb(df, value1)
+        return fig,{'visibility':'visible'}, {}, fb(df, value1,checked),{'visibility':'visible'}
+
+    if radio == 'cloropleth' :
+        import json
+
+        # Open the JSON file and read its contents
+        with open ('turkey.geojson', 'r') as f:
+            geojson_data = json.load (f)
+
+        fig = px.choropleth_mapbox (df, geojson=geojson_data, featureidkey="properties.name",
+                                    color="magnitude", locations="City",
+                                    center={ "lat": 38.9637, "lon": 35.2433 },
+                                    zoom=5,
+                                    opacity=0.5, hover_name="City")
+
+
+        fig.update_layout (mapbox_style=value4)
+        fig.update_layout (margin={ "r": 0, "t": 0, "l": 0, "b": 0 }, )
+        fig.update_layout (mapbox_bounds={ "west": 20, "east": 48, "south": 30, "north": 45 })
+
+        return fig,{'visibility':'visible'}, {}, fb(df, value1,checked),{'visibility':'visible'}
 
 
 
     if radio == 'folium':
+
         my_coordinates = [(row['lat'], row['long']) for index, row in df.iterrows ()][0]
-        m = folium.Map([39.849, 32.849], zoom_start=5, tiles=value4, attr='my_own_folium')
+        m = folium.Map([39.849, 32.849], zoom_start=12, tiles=value4, attr='my_own_folium')
 
         print(my_coordinates)
-
-
-
-
-
-        from jinja2 import Template
-        from folium.map import Marker
 
         tmpldata = """<!-- monkey patched Marker template -->
         {% macro script(this, kwargs) %}
@@ -637,7 +668,7 @@ def update_graph3(value1,value2, value3, value4, radio):
 
             # add a marker for each city
 
-        from folium.plugins import MarkerCluster
+
 
         # create a feature group for markers
         marker_group = MarkerCluster ()
@@ -785,7 +816,9 @@ def update_graph3(value1,value2, value3, value4, radio):
 
 
         return {},{'display': 'None' },html.Div(html.Iframe (id='map',
-               srcDoc=open ('ceyhun.html', 'r').read (), width='750rem', height='400rem'), style={'marginTop':'2px'}),fb(df, value1)
+               srcDoc=open ('ceyhun.html', 'r').read (), width='750rem', height='400rem'),
+                                                style={'marginTop':'2px'}),fb(df, value1,checked),{'visibility':'visible'}
+
 
     else: no_update
 
@@ -813,4 +846,4 @@ def update_coordinate_output(value):
     return 'You have entered: \n{}'.format(value)
 
 if __name__ == '__main__':
-    app.run_server(debug=True, host='127.0.0.1', port=8050)
+    app.run_server(debug=True, host='127.0.0.1', port=8051)

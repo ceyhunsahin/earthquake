@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 
 
 
-def figure_base(df, value1):
+def figure_base(df, value1, checked):
     hover_text = []
     for index, row in df.iterrows ():
         hover_text.append (('<b>{city}</b><br><br>' +
@@ -38,8 +38,14 @@ def figure_base(df, value1):
             hoverinfo='text',  # Pass the 'text' column to the hoverinfo parameter to customize the tooltip
             line=dict (color='firebrick', width=3)  # Specify the color of the line
         ))
+    if checked :
+        paper_bgcolor = '#1a1b1e'
 
-    fig.update_layout ( plot_bgcolor= '#56575E',paper_bgcolor='black',modebar_bgcolor='#CCD0E0',
+    else : paper_bgcolor ='white'
+    print(checked)
+    print(paper_bgcolor)
+
+    fig.update_layout ( plot_bgcolor= '#56575E',paper_bgcolor=paper_bgcolor,modebar_bgcolor='#CCD0E0',
                        hoverlabel_bgcolor='#DAEEED',  # Change the background color of the tooltip to light gray
                        title_text="Earthquake Analysis of Turkey's Cities",  # Add a chart title
                        title_font_family="Times New Roman",
