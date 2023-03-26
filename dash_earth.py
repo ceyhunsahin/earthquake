@@ -4,44 +4,30 @@ import os
 import sys
 import flask
 import time
-import folium
 from figure_base import figure_base as fb
 import numpy as np
 import pandas as pd
 from chatgpt_api import chatbot
-from folium import plugins
-from folium.plugins import MarkerCluster
-from geopy.distance import distance, geodesic
+from dash_extensions.javascript import assign
 from dash.long_callback import DiskcacheLongCallbackManager
-from jinja2 import Template
-from folium.map import Marker
 from dash_iconify import DashIconify
 import dash_mantine_components as dmc
-from plotly import graph_objects as go
-from plotly.subplots import make_subplots
 import dash_leaflet as dl
-from folium.plugins import MeasureControl
 from dash import no_update
 import dash_leaflet.express as dlx
-from folium.plugins import MarkerCluster
-import geopandas as gpd
-from shapely import geometry
-from shapely.geometry import Point
-from shapely.geometry.polygon import Polygon
-
 from dash.exceptions import PreventUpdate
-import dash_bootstrap_components as dbc
 from dash import Dash,dcc, html, State, Input, Output
 import dash_bootstrap_components as dbc
-#from dash_bootstrap_components._components.Container import Container
-
 import plotly.express as px
 
+# get data from csv file which was taken from http://www.koeri.boun.edu.tr/
 geo_df = pd.read_csv("earthquake.csv", index_col=0, low_memory=True)
 geo_df.drop_duplicates(keep='first', inplace=True)
-geo_df = geo_df.dropna(subset=['City'])
 geo_df = geo_df.sort_values(by = 'City')
 geo_df.reset_index(inplace=True, drop = True)
+geo_df['id'] = [i+1 for i in range(len(geo_df))]
+geo_df['lon'] = geo_df['long']
+
 ## downcasting loop
 for column in geo_df:
     if geo_df[column].dtype == 'float64':
@@ -102,9 +88,6 @@ app.config.suppress_callback_exceptions = True
 
 PLOTLY_LOGO = "https://images.plot.ly/logo/new-branding/plotly-logomark.png"
 
-
-
-
 def darkModeToggle():
     return html.Div(
         dmc.Switch(
@@ -118,8 +101,7 @@ def darkModeToggle():
         ),
     id='themeSwitchHolder')
 
-
-
+### LAYOUT
 search_bar = dbc.Row(
     [
         dbc.Col(dbc.Input(id = 'chatgptquestion',type="search",inputMode=True, placeholder="Chat with CHATGPT")),
@@ -127,8 +109,6 @@ search_bar = dbc.Row(
             dbc.Button ("Start",id='search',
                  color="primary", className="ms-2", n_clicks=0
             ),
-
-
         width="auto",),
         html.Div (
             [
@@ -145,14 +125,14 @@ search_bar = dbc.Row(
                                                 id="user-input",
                                                 type="text",
                                                 placeholder="Chat with ChatGPT",
-                                                style={'width': '43rem','height': '5rem', 'backgroundColor':'lightgray', 'textColor': 'Black'},
+                                                style={'width': '43rem','height': '5rem', 'backgroundColor':'black'},
+
                                                 className="user-input",
                                             ),
                                             dbc.Button ("Send", id="submit-button", color='primary', className="me-1"),
                                         ],
                                         className="input-container",
                                     ),
-
                                 ])],
                                 id = 'QA_values', className="chat-container",
                             )
@@ -193,13 +173,10 @@ navbar = dbc.Navbar(
                     [
                         dbc.Col(html.Img(src=PLOTLY_LOGO, height="30px")),
                         dbc.Col(dbc.NavbarBrand("Turkish Earthquake Chart", className="ms-2")),
-
-
                     ],
                     align="center",
                     className="g-0",
                 ),
-                #href="https://plotly.com",
                 style={"textDecoration": "none"},
             ),
             dbc.Collapse(
@@ -208,9 +185,6 @@ navbar = dbc.Navbar(
                 is_open=False,
                 navbar=True,
             ),
-
-
-
         ]
     ),
     color="dark",
@@ -241,60 +215,13 @@ def toggle_navbar_collapse(n, is_open):
 
 
 
-sidebar = html.Div(
-    [
-        html.Div(
-            [
-                html.H2("Parameters", style={"color": "white"}),
-            ],
-            className="sidebar-header",
-        ),
-        html.Hr(),
-        dbc.Nav(
-            [
-                dbc.NavLink(
-                    [html.I(className="fas fa-home me-2"), html.Span("Dashboard")],
-                    href="/",
-                    active="exact",
-                ),
-                dbc.NavLink(
-                    [
-                        html.I(className="fas fa-chart-bar fa-fw fa-lg"),
-                        html.Span("Data"),
-                    ],
-                    href="/data",
-                    active="exact",
-                ),
-                dbc.NavLink(
-                    [
-                        html.I(className="fas fa-map fa-fw fa-lg"),
-                        html.Span("Map"),
-                    ],
-                    href="/map",
-                    active="exact",
-                ),
-                dbc.NavLink(
-                    [
-                        html.I(className="fas fa-map-marker fa-fw fa-lg"),
-                        html.Span("More Maps"),
-                    ],
-                    href="/more_maps",
-                    active="exact",
-                ),
-            ],
-            vertical=True,
-            pills=True,
-        ),
-    ],
-    className="sidebar",
-)
 
 chart_type_options = ["satellite-streets","carto-darkmatter", "carto-positron", "open-street-map",
                       "stamen-terrain", "stamen-toner", "stamen-watercolor", "white-bg",
                       "basic", "streets", "outdoors", "light", "dark", "satellite",
                       ]
 
-chart_type_folium = ["OpenStreetMap", "Stamen Terrain", "CartoDB Positron","stamentoner" ]
+chart_type_leaflet = ["OpenStreetMap"]
 
 # Layout design
 app.layout = html.Div(
@@ -310,7 +237,6 @@ app.layout = html.Div(
             ],
             className="content",
         ),
-        html.Div(id='blank-output', children = []),
 
         dcc.Loading (dcc.Store (id="store"), fullscreen=True, type="dot"),
         dbc.Row([
@@ -319,11 +245,12 @@ app.layout = html.Div(
                 html.Div (id = 'mapbox1', children = [
                     html.Div(id='questions_val', children=[], style={'display': 'None'}),
                     html.Div(id='response_val', children=[], style={'display': 'None'}),
+                    html.Div(id='leaflet_click_data', children=[], style={'display': 'None'}),
                     dcc.Dropdown (id='valcity',
                                   options=[{ 'label': i, 'value': i }
                                            for i in geo_df['City'].unique()],
                                   multi=False,
-                                  style={ 'cursor': 'pointer', 'margin': '5px', 'borderRadius': '1rem','width' : '30rem' },
+                                  style={ 'cursor': 'pointer', 'margin': '2px', 'borderRadius': '1rem','width' : '32rem' },
                                   clearable=True,
                                   searchable=True,
                                   placeholder='Select City ...',
@@ -332,47 +259,57 @@ app.layout = html.Div(
                     dcc.Dropdown (id='valtown',
                                   options=[],
                                   multi=False,
-                                  style={ 'cursor': 'pointer', 'margin': '5px', 'borderRadius': '1rem', 'width' : '30rem' },
+                                  style={ 'cursor': 'pointer', 'margin': '2px', 'borderRadius': '1rem', 'width' : '32rem' },
                                   clearable=True,
                                   searchable=True,
                                   placeholder='Select Town ...',
-
                                   ),
-                    dcc.Dropdown (id='radiograph',
+                    dcc.Dropdown (id='date_type',
+                                  options=[],
+                                  style={ 'cursor': 'pointer', 'margin': '2px', 'borderRadius': '1rem',
+                                          'width': '32rem' },
+                                  clearable=True,
+                                  placeholder='Select datetime ...',
+                                      )
+
+                ]),
+                width={ "size": 3, 'offset':1 },
+            ),]),
+            dbc.Row([
+                dbc.Col([
+                        dcc.Dropdown (id='radiograph',
                                   options=[{ 'label': i, 'value': i }
-                                           for i in ['mapbox','cloropleth', 'density', 'folium']],
-                                  value='mapbox',
+                                           for i in ['scatter', 'density', 'leaflet']],
+                                  value='scatter',
                                   multi=False,
-                                  style={ 'cursor': 'pointer', 'margin': '5px', 'borderRadius': '1rem', 'width' : '30rem' },
+                                  style={ 'cursor': 'pointer', 'marginLeft': '5rem',
+                                              'marginTop': '2px',
+                                              'marginDown': '5px','width': '15rem',
+                                              'borderRadius': '1rem' },
                                   clearable=True,
                                   searchable=True,
                                   placeholder='Select Map type ...',
 
                                   ),
-
-                    html.Div(id = 'third_ligne_dd', children = [
-                                  dcc.Dropdown (  id='date_type',
-                                                  options=[],
-                                                  style={ 'cursor': 'pointer', 'margin':'2px', 'width' : '20rem', 'borderRadius': '1rem' },
-                                                  clearable=True,
-                                                  placeholder='Select datetime ...',
-                                                  ),
+                     ],width={ "size": 3, }),
+                dbc.Col([
                         dcc.Dropdown (id='chart_type',
-                                  options=[],
+                                      options=[],
 
-                                  style={ 'cursor': 'pointer', 'margin':'2px', 'width' : '20rem', 'borderRadius': '1rem' },
-                                  clearable=True,
-                                  placeholder='Select chart type ...',
-                                  ),
+                                      style={ 'cursor': 'pointer', 'marginLeft': '-19px',
+                                              'marginRight': '2px', 'marginTop': '2px',
+                                              'marginDown': '5px', 'width': '15rem',
+                                              'borderRadius': '1rem' },
+                                      clearable=True,
+                                      placeholder='Select chart type ...',
+                                      ),
 
-                    ], className='dropdown-header'),
 
-                ]),
-                width={ "size": 6 },
-            ),]),
+                ],width={ "size": 3,  })
+            ]),
             dbc.Row([
                 dbc.Col([dcc.Graph (id="graph1",config = config),
-                        html.Div(id='folium_graph')],width={ "size": 6 }),
+                        html.Div(id='leaflet_graph')],width={ "size": 6 }),
                 dbc.Col (id = 'graph_theme',children = [
                     dcc.Graph(id="graph2",config = config, style={'visibility':'hidden'})],
                     width={ "size": 6})
@@ -380,9 +317,10 @@ app.layout = html.Div(
 
     ],
 )
+#=============================================================================================================
 
 
-
+## CHART TYPE DROPDOWN
 @app.callback(
     [Output("chart_type", "options"),Output("chart_type", "value")],
     Input("radiograph", "value"),
@@ -391,9 +329,10 @@ app.layout = html.Div(
 def chart_options(value1):
     if value1 == None:
         raise PreventUpdate
-    if value1 == 'mapbox' or value1 == 'density':
+    if value1 == 'scatter' or value1 == 'density':
         return [{ 'label': i, 'value': i } for i in chart_type_options], 'satellite-streets'
-    return [{ 'label': i, 'value': i } for i in chart_type_folium ],'OpenStreetMap'
+    return [{ 'label': i, 'value': i } for i in chart_type_leaflet ],'OpenStreetMap'
+#=============================================================================================================
 
 
 @app.callback(
@@ -406,6 +345,9 @@ def toggle_modal(n1, is_open):
     if n1:
         return not is_open
     return is_open
+
+
+# CHATGPT CONVERSATION
 
 def create_modal(x,question, response):
     lis = []
@@ -429,15 +371,13 @@ def create_modal(x,question, response):
 def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
     ctx = dash.callback_context
     button_click = ctx.triggered[0]["prop_id"].split (".")[0]
-    print(response)
-
-
+    if is_open == False :
+        question, response = [], []
 
     if button_click == 'search' :
-        print ('value1', value1)
-        print('value1',chatbot(value1))
+
         question.append(value1) # add search bar question to question list ===>   ['']
-        print(question)
+
         response.append(chatbot(value1)) # add response, response of the search chat ===>  ['']
 
         x = len(question)
@@ -445,36 +385,23 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
 
     if button_click == 'submit-button' :
 
-        print('balue2', value2)
         question.append (value2)
 
-        print('question2',question)
         final_val = ''.join(i for i in question)
 
-
-
-        print('final_val', final_val)
-
         response.append(chatbot (final_val))
-
-
         x = len(question)
         return create_modal (x, question, response), question, response
 
     else:
         raise PreventUpdate
+#=============================================================================================================
 
-
-
-
-
-
+# CITY/ TOWN/ DATE  DROPDOWN
 @app.callback(Output("date_type", "options"),
               [Input("valcity", "value"),
                Input("valtown", "value")])
 def update_graph(value1,value2):
-    print('render4')
-
 
     if value1 == None and value2 == None :
         raise PreventUpdate
@@ -490,14 +417,10 @@ def update_graph(value1,value2):
     return [{ 'label': i, 'value': i } for i in date_df]
 
 
-
-
-
 @app.callback(Output("valtown", "options"),
               [Input("valcity", "value"),
                Input("date_type", "value")])
 def update_graph2(value1,value2):
-    print('render5')
 
     if value1 == None and value2 == None :
         raise PreventUpdate
@@ -511,13 +434,14 @@ def update_graph2(value1,value2):
         city_df = geo_df[geo_df['City'] == value1]
         town_df = city_df['Town'].sort_values(ascending=True).unique()
     return [{ 'label': i, 'value': i } for i in town_df]
+#=============================================================================================================
 
 
-
+# MAP GRAPH
 @app.long_callback(
               [Output("graph1", "figure"),
                Output("graph1", "style"),
-               Output("folium_graph", "children"),
+               Output("leaflet_graph", "children"),
                Output("graph2", "figure"),
                Output("graph2", "style")],
               [Input("valcity", "value"),
@@ -529,10 +453,6 @@ def update_graph2(value1,value2):
 def update_graph3(value1,value2, value3, value4, radio, checked):
 
     time.sleep(3)
-
-
-    #if value1 == None or value2 == None or value3 == None or value4 == None:
-        #raise PreventUpdate
 
     if value1 != None and value2 != None and value3 != None :
         df = geo_df[geo_df['City'] == value1]
@@ -563,18 +483,14 @@ def update_graph3(value1,value2, value3, value4, radio, checked):
 
     if value1 == None and value2 == None and value3 == None :
         df = geo_df
-    print ('dffff', df)
-    df['City'] = df['City'].apply(lambda c: c.capitalize())
+    #df['City'] = df['City'].apply(lambda c: c.capitalize())
     min = abs(float(df['magnitude'].min()))
 
     max = float(df['magnitude'].max())
 
-
-
     px.set_mapbox_access_token (mapbox_access_token)
 
     if radio == 'density':
-
 
         fig = px.density_mapbox (
                 df,
@@ -583,22 +499,19 @@ def update_graph3(value1,value2, value3, value4, radio, checked):
                 hover_name="City",
                 hover_data=["date","time", "magnitude"],
                 range_color= [min, max],
-                color_continuous_scale=px.colors.sequential.Viridis,
+                color_continuous_scale='rainbow',
                 zoom=4,
                 radius=25,
                 height=440,
-
             )
 
         fig.update_layout (mapbox_style=value4)
         fig.update_layout (margin={ "r": 0, "t": 0, "l": 0, "b": 0 },)
         fig.update_layout (mapbox_bounds={ "west": 20, "east": 48, "south": 30, "north": 45 })
 
-
         return fig,{'visibility':'visible'},{},fb(df, value1, checked),{'visibility':'visible'}
 
-    if radio == 'mapbox' :
-        print ('burdaki df ne oluyor', df)
+    if radio == 'scatter' :
         fig = px.scatter_mapbox (
             df,
             lat="lat",
@@ -609,7 +522,6 @@ def update_graph3(value1,value2, value3, value4, radio, checked):
             color_discrete_sequence=["fuchsia"],
             zoom=4,
             height=440,
-
         )
 
         fig.update_layout (mapbox_style=value4)
@@ -618,232 +530,65 @@ def update_graph3(value1,value2, value3, value4, radio, checked):
 
         return fig,{'visibility':'visible'}, {}, fb(df, value1,checked),{'visibility':'visible'}
 
-    if radio == 'cloropleth' :
-        import json
+    if radio == 'leaflet':
 
-        # Open the JSON file and read its contents
-        with open ('turkey.geojson', 'r') as f:
-            geojson_data = json.load (f)
+        # Create a list of feature dictionaries
+        features = []
+        for i, row in df.iterrows ():
+            feature = {
+                'type': 'Feature',
+                'geometry': {
+                    'type': 'Point',
+                    'coordinates': [row['long'], row['lat']]
+                },
+                'properties': {
+                    'name': row['City'],
+                    'description': row['location'],
+                    'id' : row['id']
+                }
+            }
+            features.append (feature)
 
-        fig = px.choropleth_mapbox (df, geojson=geojson_data, featureidkey="properties.name",
-                                    color="magnitude", locations="City",
-                                    center={ "lat": 38.9637, "lon": 35.2433 },
-                                    zoom=5,
-                                    opacity=0.5, hover_name="City")
-
-
-        fig.update_layout (mapbox_style=value4)
-        fig.update_layout (margin={ "r": 0, "t": 0, "l": 0, "b": 0 }, )
-        fig.update_layout (mapbox_bounds={ "west": 20, "east": 48, "south": 30, "north": 45 })
-
-        return fig,{'visibility':'visible'}, {}, fb(df, value1,checked),{'visibility':'visible'}
-
-
-
-    if radio == 'folium':
-
-        my_coordinates = [(row['lat'], row['long']) for index, row in df.iterrows ()][0]
-        m = folium.Map([39.849, 32.849], zoom_start=12, tiles=value4, attr='my_own_folium')
-
-        print(my_coordinates)
-
-        tmpldata = """<!-- monkey patched Marker template -->
-        {% macro script(this, kwargs) %}
-            var {{ this.get_name() }} = L.marker(
-                {{ this.location|tojson }},
-                {{ this.options|tojson }}
-            ).addTo({{ this._parent.get_name() }}).on('click', onClick);
-        {% endmacro %}
-        """
-
-        Marker._mytemplate = Template (tmpldata)
-
-        def myMarkerInit(self, *args, **kwargs):
-            self.__init_orig__ (*args, **kwargs)
-            self._template = self._mytemplate
-
-        Marker.__init_orig__ = Marker.__init__
-        Marker.__init__ = myMarkerInit
+        lon = [features[i]['geometry']['coordinates'][0] for i in range(len(features))]
+        lat = [features[i]['geometry']['coordinates'][1] for i in range (len (features))]
+        city = [features[i]['properties']['name'] for i in range (len (features))]
+        dict_value = [{'lat': lat[i],'lon': lon[i] , 'city':city[i]} for i in range(len(lat))]
 
 
-            # add a marker for each city
+        # Convert the list of feature dictionaries to a GeoJSON object
+        dicts = [dict (tooltip =m["city"] ,popup=f'{ m["lat"] }, { m["lon"] }', lat=m["lat"], lon=m["lon"]) for m in dict_value]
+
+        fig = dl.Map ([
+                dl.TileLayer (),dl.LayerGroup(id="layer"),
+                dl.MeasureControl (position="topleft", primaryLengthUnit="kilometers", primaryAreaUnit="hectares",
+                                   activeColor="#214097", completedColor="#972158"),
+                #
+                dl.GeoJSON (data=dlx.dicts_to_geojson (dicts), cluster=True, zoomToBoundsOnClick=True,),
 
 
 
-        # create a feature group for markers
-        marker_group = MarkerCluster ()
+            ], center=(38.75, 32.4), zoom=5,id='map',
+                style={ 'width': '100%', 'height': '50vh', 'margin': "auto", "display": "block" }),
 
-        # loop through the first 10 rows of the dataframe
-        try :
-
-            for index, row in df.head (10).iterrows ():
-                marker1 = folium.Marker (location=[row['lat'], row['long']], popup=row['City'],
-                                        icon=folium.Icon (color='red'))
-                marker1.add_to (marker_group)
-        except RecursionError as err:
-            if err.args[0] != 'maximum recursion depth exceeded in comparison':
-                # different type of runtime error
-                raise
-            print ('Sorry but this marker was not able to finish '
-                   'analyzing: {}'.format (err.args[0]))
-
-        # add the marker group to the map
-        marker_group.add_to (m)
-
-        el = folium.MacroElement ().add_to (m)
-        el._template = Template ("""
-            {% macro script(this, kwargs) %}
-            function copy(text) {
-                var input = document.createElement('textarea');
-                input.innerHTML = text;
-                document.body.appendChild(input);
-                input.select();
-                var result = document.execCommand('copy');
-                document.body.removeChild(input);
-                return result;
-            };
-
-            function getInnerText( sel ) {
-                var txt = '';
-                $( sel ).contents().each(function() {
-                    var children = $(this).children();
-                    txt += ' ' + this.nodeType === 3 ? this.nodeValue : children.length ? getInnerText( this ) : $(this).text();
-                });
-                return txt;
-            };
-
-            function onClick(e) {
-               var popup = e.target.getPopup();
-               var content = popup.getContent();
-               text = getInnerText(content);
-  
-               copy(text);
-            };
-            {% endmacro %}
-        """)
-
-        plugins.MiniMap ().add_to (m)
-        plugins.Geocoder ().add_to (m)
-
-        # mesafeyi hesaplama
-        #if marker1 is not None and marker2 is not None:
-        #    dist = geodesic ((marker1.location[0], marker1.location[1]), (marker2.location[0], marker2.location[1])).km
-        #    print (f"Mesafe: {dist:.2f} km")
-
-
-
-        marker2 = folium.Marker (
-            location=[38.0, 40.0],
-            popup=f'<p id="latlon">{38.0}, {40.0}</p>',
-            className='leaflet-marker-draggable',
-
-            draggable=True
-            ).add_to (m)
-
-        el1 = folium.MacroElement ().add_to (m)
-        el1._template = Template ("""
-            {% macro script(this, kwargs) %}
-            function copy(text) {
-                var input = document.createElement('textarea');
-                input.innerHTML = text;
-                document.body.appendChild(input);
-                input.select();
-                var result = document.execCommand('copy');
-                document.body.removeChild(input);
-                return result;
-            };
-
-            function onClick(e) {
-               var lat = e.latlng.lat; 
-               var lng = e.latlng.lng;
-               var newContent = '<p id="latlon">' + lat + ', ' + lng + '</p>';
-               e.target.setPopupContent(newContent);
-               e.target.setLatLng([lat,lng]);
-               lat, lng = e.target.location;
-               
-               copy(lat + ', ' + lng);
-            };
-            {% endmacro %}
-        """)
-
-        # İşaretçinin konumunu güncellemek için bir fonksiyon oluşturun
-        def update_marker_location(e):
-            lat, lng = e['target']['_latlng']
-            marker2.set_location ([lat, lng])
-
-        # İşaretçinin sürükleme olayına bir dinleyici ekleyin
-        marker2.add_child (folium.Popup ("Initial location: {}, {}".format (marker2.location[0], marker2.location[1])))
-        m.get_root ().html.add_child (folium.Element ("""
-        <script>
-            var marker = document.getElementsByClassName('leaflet-marker-draggable')[0];
-            marker.addEventListener('dragend', function(e) {
-                window.dispatchEvent(new CustomEvent('markerMoved', { detail: e }));
-            });
-        </script>
-        """))
-
-        # İşaretçinin sürükleme olayı tamamlandığında tetiklenecek özel bir etkinlik oluşturun
-        m.get_root ().html.add_child (folium.Element ("""
-        <script>
-            window.addEventListener('markerMoved', function(e) {
-                var eventDetail = e.detail;
-                updateMarkerLocation(eventDetail);
-            });
-        </script>
-        """))
-
-        from folium.plugins import MousePosition
-
-        formatter = "function(num) {return L.Util.formatNum(num, 3) + ' º ';};"
-        MousePosition (
-            position="topright",
-            separator=" | ",
-            empty_string="NaN",
-            lng_first=True,
-            num_digits=20,
-            prefix="Coordinates:",
-            lat_formatter=formatter,
-            lng_formatter=formatter,
-        ).add_to (m)
-
-        print(marker2.location[0])
-
-
-        m.save ('ceyhun.html')
-
-
-
-
-
-        return {},{'display': 'None' },html.Div(html.Iframe (id='map',
-               srcDoc=open ('ceyhun.html', 'r').read (), width='750rem', height='400rem'),
-                                                style={'marginTop':'2px'}),fb(df, value1,checked),{'visibility':'visible'}
-
+        return {},{'display': 'None' },fig,fb(df, value1,checked),{'visibility':'visible'}
 
     else: no_update
 
 
+@app.callback ([Output ("layer", "children")],
+               [Input ("map", "click_lat_lng"),])
+def map_click(click_lat_lng):
+    if click_lat_lng ==None:
+        raise PreventUpdate
+
+    icon = {'iconUrl': app.get_asset_url('pngegg.png'),
+            'iconSize': [50, 50]}
+    res = [dl.Marker (position=click_lat_lng, icon= icon, children=dl.Tooltip ("({:.3f}, {:.3f})".format (*click_lat_lng)))]
+    print(click_lat_lng)
+    return res
 
 
 
-
-
-
-@app.callback(Output('blank-output', 'children'), [Input("graph1", "clickData")])
-def display_click_data(click):
-    if click:
-        lat = click['points'][0]['lat']
-        lon = click['points'][0]['lon']
-        print("Tıklanan noktanın enlemi: ", click['points'][0]['lat'])
-        print("Tıklanan noktanın boylamı: ", click['points'][0]['lon'])
-        return (lat,lon)
-
-@app.callback(
-    Output('textarea-output', 'children'),
-    Input('blank-output', 'children')
-)
-def update_coordinate_output(value):
-    return 'You have entered: \n{}'.format(value)
 
 if __name__ == '__main__':
     app.run_server(debug=True, host='127.0.0.1', port=8051)

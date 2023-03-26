@@ -7,6 +7,7 @@ from plotly.subplots import make_subplots
 
 
 def figure_base(df, value1, checked):
+    print('fb',df)
     hover_text = []
     for index, row in df.iterrows ():
         hover_text.append (('<b>{city}</b><br><br>' +
