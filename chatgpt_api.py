@@ -35,7 +35,7 @@ def process_prompt(prompt, df):
     print('prompt1', prompt)
 
 
-    if len(prompt) > 1 and prompt[0] =='File' and prompt[-1] !='stop':
+    if len(prompt) > 1 and prompt[0] =='File' and prompt[-1] !='file' and prompt[-1] !='stop':
         #prompt = ''.join (i for i in prompt[-1])
         prompt = prompt[-1].lower ()
 
@@ -53,20 +53,25 @@ def process_prompt(prompt, df):
             # Retrieve the corresponding values from the dataframe
             if best_match[0] in parameter1[0]['City'] :
                 values = df[df['City'] == best_match[0]]
-                response = f"Values in '{column}': {values}"
+
+                response = values.to_json(orient='records')
             if best_match[0] in parameter1[1]['Town'] :
                 values = df[df['Town'] == best_match[0]]
-                response = f"Values in '{column}': {values}"
-    elif prompt == 'File' or prompt[-1] == 'file'  :
+                response = values.to_json(orient='records')
+
+        else:
+            response = False
+            return response
+    elif prompt == 'file' or prompt[-1] == 'file'  :
         return 'Ok, Let\'s start work on your file, prompt your questions'
     elif prompt[-1] == 'stop' :
-        prompt = ''
+
         return 'Thank you for your prompts'
 
 
-    else :
-        response = False
-        return response
+
+
+    return response
 
 # Preprocess user input and modify conversation history
 def chatbot(prompt):

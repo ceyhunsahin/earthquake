@@ -2,7 +2,9 @@
 import dash
 import os
 import sys
+import json
 import flask
+from dash import dash_table
 import time
 from figure_base import figure_base as fb
 import numpy as np
@@ -378,12 +380,27 @@ def create_modal(x, question, response):
         if any(item in response.split(" ") for item in code_keyword):
 
             return True
+
+    def validateJSON(response):
+        try:
+            print('it works')
+            json.loads (response)
+        except ValueError as err:
+            return False
+        return True
+
         # Add your logic here to determine whether the response should be displayed as code or explanation
 
     for i in range(x):
         # Check if the response should be displayed as code or explanation
         if should_display_as_code(response[i]):
             response_html = html.Pre(response[i], className='code-snippet')
+        elif validateJSON(response[i]):
+            json_file = json.loads(response[i])
+            print (len(json_file[0]))
+            df = pd.DataFrame(json_file[0], index = range(len(json_file[0])))
+
+            response_html = dash_table.DataTable(df.to_dict('records'),[{"name": i, "id": i} for i in df.columns], id='tbl'),
         else:
             response_html = html.P("A: " + response[i],
                                    style={
