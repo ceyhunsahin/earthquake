@@ -7,7 +7,6 @@ from plotly.subplots import make_subplots
 
 
 def figure_base(df, value1, checked):
-    print('fb',df)
     hover_text = []
     for index, row in df.iterrows ():
         hover_text.append (('<b>{city}</b><br><br>' +
@@ -20,11 +19,6 @@ def figure_base(df, value1, checked):
 
     df_city = df[(df['City'] == value1)]
     df_city = df_city.sort_values('date_and_time')
-
-    print('bu yine bos mu', df_city[['date_and_time','magnitude']])
-
-
-
 
     fig = make_subplots (specs=[[{ "secondary_y": False }]])
 
@@ -43,8 +37,7 @@ def figure_base(df, value1, checked):
         paper_bgcolor = '#1a1b1e'
 
     else : paper_bgcolor ='white'
-    print(checked)
-    print(paper_bgcolor)
+
 
     fig.update_layout ( plot_bgcolor= '#56575E',paper_bgcolor=paper_bgcolor,modebar_bgcolor='#CCD0E0',
                        hoverlabel_bgcolor='#DAEEED',  # Change the background color of the tooltip to light gray

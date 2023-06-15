@@ -8,13 +8,14 @@ from figure_base import figure_base as fb
 import numpy as np
 import pandas as pd
 from chatgpt_api import chatbot
-from dash_extensions.javascript import assign
 from dash.long_callback import DiskcacheLongCallbackManager
 from dash_iconify import DashIconify
 import dash_mantine_components as dmc
 import dash_leaflet as dl
 from dash import no_update
-import dash_leaflet.express as dlx
+import dash_deck
+import pydeck as pdk
+#import dash_leaflet.express as dlx
 from dash.exceptions import PreventUpdate
 from dash import Dash,dcc, html, State, Input, Output
 import dash_bootstrap_components as dbc
@@ -245,6 +246,8 @@ app.layout = html.Div(
                 html.Div (id = 'mapbox1', children = [
                     html.Div(id='questions_val', children=[], style={'display': 'None'}),
                     html.Div(id='response_val', children=[], style={'display': 'None'}),
+                    html.Div (id='questions_val_file', children=[], style={ 'display': 'None' }),
+                    html.Div (id='response_val_file', children=[], style={ 'display': 'None' }),
                     html.Div(id='leaflet_click_data', children=[], style={'display': 'None'}),
                     dcc.Dropdown (id='valcity',
                                   options=[{ 'label': i, 'value': i }
@@ -279,7 +282,7 @@ app.layout = html.Div(
                 dbc.Col([
                         dcc.Dropdown (id='radiograph',
                                   options=[{ 'label': i, 'value': i }
-                                           for i in ['scatter', 'density', 'leaflet']],
+                                           for i in ['scatter', 'density', 'hexagon_layer']],
                                   value='scatter',
                                   multi=False,
                                   style={ 'cursor': 'pointer', 'marginLeft': '5rem',
@@ -303,6 +306,21 @@ app.layout = html.Div(
                                       clearable=True,
                                       placeholder='Select chart type ...',
                                       ),
+
+
+                ],width={ "size": 3,  }),
+
+            ]),
+            dbc.Row([
+                    dbc.Col([
+                        dcc.Slider (-180, +180,id='slider-bearing', value=-27,
+                                    marks=None,tooltip={"placement": "bottom", "always_visible": True}, updatemode='drag')
+
+
+                ],width={ "size": 3,  }),
+                    dbc.Col([
+                        dcc.Slider (-180, +180,id='slider-pitch', value=40,
+                                    marks=None,tooltip={"placement": "bottom", "always_visible": True},updatemode='drag')
 
 
                 ],width={ "size": 3,  })
@@ -331,7 +349,7 @@ def chart_options(value1):
         raise PreventUpdate
     if value1 == 'scatter' or value1 == 'density':
         return [{ 'label': i, 'value': i } for i in chart_type_options], 'satellite-streets'
-    return [{ 'label': i, 'value': i } for i in chart_type_leaflet ],'OpenStreetMap'
+    return [],[]
 #=============================================================================================================
 
 
@@ -349,17 +367,53 @@ def toggle_modal(n1, is_open):
 
 # CHATGPT CONVERSATION
 
-def create_modal(x,question, response):
+def create_modal(x, question, response):
     lis = []
-    for i in range (x):
 
-         lis.append(html.Div ([
-                html.P (question[i], style={'color': 'black'}),
-                html.Hr (),
-                html.P (response[i], style={'width':'50rem','color': 'black'}),
-                html.Hr () ]))
+
+    def should_display_as_code(question):
+        response = question.lower()
+        code_keyword = [ "code",  'snippet', 'python', 'function', 'basic', 'print', 'def', 'import']
+
+        if any(item in response.split(" ") for item in code_keyword):
+
+            return True
+        # Add your logic here to determine whether the response should be displayed as code or explanation
+
+    for i in range(x):
+        # Check if the response should be displayed as code or explanation
+        if should_display_as_code(response[i]):
+            response_html = html.Pre(response[i], className='code-snippet')
+        else:
+            response_html = html.P("A: " + response[i],
+                                   style={
+                                       'width': '50rem',
+                                       'color': '#05336e',
+                                       'backgroundColor': '#fbe7b2',
+                                       'width': '80vh',
+                                       'border': '1px solid gray',
+                                       'border-radius': '5%'
+                                   })
+
+        lis.append(html.Div([
+            html.P("Q: " + question[i], style={'color': 'black'}),
+            html.Hr(),
+            response_html,
+            html.Hr()
+        ]))
+
     return lis
 
+
+@app.callback(
+    Output('user-input', 'value'),
+    Input("submit-button", "n_clicks"),
+    State('user-input', 'value')
+)
+def clear_input(n_clicks , value):
+    if n_clicks != None and n_clicks > 0:
+        return ''
+    else: value
 
 @app.callback(
     [Output("conversation-container", "children"),Output("questions_val", "children"),Output("response_val", "children")],
@@ -371,31 +425,35 @@ def create_modal(x,question, response):
 def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
     ctx = dash.callback_context
     button_click = ctx.triggered[0]["prop_id"].split (".")[0]
+
+
+
     if is_open == False :
         question, response = [], []
 
     if button_click == 'search' :
 
-        question.append(value1) # add search bar question to question list ===>   ['']
+        question.append(value1.title()) # add search bar question to question list ===>   ['']
 
         response.append(chatbot(value1)) # add response, response of the search chat ===>  ['']
 
         x = len(question)
+
         return create_modal (x, question, response), question, response
 
     if button_click == 'submit-button' :
 
         question.append (value2)
 
-        final_val = ''.join(i for i in question)
+        response.append(chatbot (question))
 
-        response.append(chatbot (final_val))
+
         x = len(question)
         return create_modal (x, question, response), question, response
 
     else:
         raise PreventUpdate
-#=============================================================================================================
+#=============================================================================================================#
 
 # CITY/ TOWN/ DATE  DROPDOWN
 @app.callback(Output("date_type", "options"),
@@ -437,6 +495,8 @@ def update_graph2(value1,value2):
 #=============================================================================================================
 
 
+
+
 # MAP GRAPH
 @app.long_callback(
               [Output("graph1", "figure"),
@@ -449,8 +509,10 @@ def update_graph2(value1,value2):
                Input("date_type", "value"),
                Input("chart_type", "value"),
                Input("radiograph", 'value'),
-               Input('themeSwitch','checked'),])
-def update_graph3(value1,value2, value3, value4, radio, checked):
+               Input('themeSwitch','checked'),
+               Input('slider-pitch','value'),
+               Input('slider-bearing','value')])
+def update_graph3(value1,value2, value3, value4, radio, checked, pitch, bearing):
 
     time.sleep(3)
 
@@ -530,45 +592,45 @@ def update_graph3(value1,value2, value3, value4, radio, checked):
 
         return fig,{'visibility':'visible'}, {}, fb(df, value1,checked),{'visibility':'visible'}
 
-    if radio == 'leaflet':
+    if radio == 'hexagon_layer':
 
-        # Create a list of feature dictionaries
-        features = []
-        for i, row in df.iterrows ():
-            feature = {
-                'type': 'Feature',
-                'geometry': {
-                    'type': 'Point',
-                    'coordinates': [row['long'], row['lat']]
-                },
-                'properties': {
-                    'name': row['City'],
-                    'description': row['location'],
-                    'id' : row['id']
-                }
-            }
-            features.append (feature)
-
-        lon = [features[i]['geometry']['coordinates'][0] for i in range(len(features))]
-        lat = [features[i]['geometry']['coordinates'][1] for i in range (len (features))]
-        city = [features[i]['properties']['name'] for i in range (len (features))]
-        dict_value = [{'lat': lat[i],'lon': lon[i] , 'city':city[i]} for i in range(len(lat))]
+        print(df)
+        from tqdm.auto import tqdm, trange
+        from time import sleep
 
 
-        # Convert the list of feature dictionaries to a GeoJSON object
-        dicts = [dict (tooltip =m["city"] ,popup=f'{ m["lat"] }, { m["lon"] }', lat=m["lat"], lon=m["lon"]) for m in dict_value]
+            # Can also use bar.write()
+        # Define a layer to display on a map
+        layer = pdk.Layer (
+            "HexagonLayer",
+            df[['lat', 'long']],
+            get_position=["long", "lat"],
+            auto_highlight=True,
+            elevation_scale=50,
+            pickable=True,
+            elevation_range=[0, 1000],
+            extruded=True,
+            coverage=1,
+        )
 
-        fig = dl.Map ([
-                dl.TileLayer (),dl.LayerGroup(id="layer"),
-                dl.MeasureControl (position="topleft", primaryLengthUnit="kilometers", primaryAreaUnit="hectares",
-                                   activeColor="#214097", completedColor="#972158"),
-                #
-                dl.GeoJSON (data=dlx.dicts_to_geojson (dicts), cluster=True, zoomToBoundsOnClick=True,),
+        # Set the viewport location
+        view_state = pdk.ViewState (
+            longitude=35,
+            latitude = 38,
+            zoom=6,
+            min_zoom=5,
+            max_zoom=15,
+            pitch=pitch,
+            bearing=bearing,
+        )
 
+        r = pdk.Deck (layers=[layer], initial_view_state=view_state, map_provider='mapbox')
 
+        fig = dash_deck.DeckGL(r.to_json(), id="deck-gl",tooltip={"text": "{position}\nMagnitude: {magnitude}"},
+                               mapboxKey=mapbox_access_token,style={"width": "50vw", "height": "40vh"})
 
-            ], center=(38.75, 32.4), zoom=5,id='map',
-                style={ 'width': '100%', 'height': '50vh', 'margin': "auto", "display": "block" }),
+        print(fig)
+
 
         return {},{'display': 'None' },fig,fb(df, value1,checked),{'visibility':'visible'}
 
@@ -584,11 +646,10 @@ def map_click(click_lat_lng):
     icon = {'iconUrl': app.get_asset_url('pngegg.png'),
             'iconSize': [50, 50]}
     res = [dl.Marker (position=click_lat_lng, icon= icon, children=dl.Tooltip ("({:.3f}, {:.3f})".format (*click_lat_lng)))]
-    print(click_lat_lng)
     return res
 
 
 
 
 if __name__ == '__main__':
-    app.run_server(debug=True, host='127.0.0.1', port=8051)
+    app.run_server(debug=True, host='127.0.0.1', port=8050)
