@@ -1,10 +1,8 @@
-from thefuzz import fuzz
-from thefuzz import process
+
 import openai
 import pandas as pd
 import os
 from dotenv import load_dotenv
-import gc
 
 
 load_dotenv()
@@ -18,85 +16,51 @@ model_engine = "text-davinci-003"
 #nlp = spacy.load ("en_core_web_sm")
 
 df = pd.read_csv('earthquake.csv', index_col=0).sample(frac = 0.05)
-
-
-parameter1 = []
-parameter2 = []
-
-for i in ['City', 'Town']:
-    parameter1.append({i: df[i].unique ()})
-
-
-parameter2 = parameter1[0]['City'].tolist() + parameter1[1]['Town'].tolist()
-
-
-def process_prompt(prompt, df):
-    # Convert prompt to lowercase for case-insensitive matching
-    print('prompt1', prompt)
-
-
-    if len(prompt) > 1 and prompt[0] =='File' and prompt[-1] !='file' and prompt[-1] !='stop':
-        #prompt = ''.join (i for i in prompt[-1])
-        prompt = prompt[-1].lower ()
-
-        print('prompt3', prompt)
-
-        # Find the best matching column in the dataframe
-
-        best_match = process.extractOne (prompt, parameter2, scorer=fuzz.partial_ratio)
-
-        print('best_match', best_match)
-
-        if best_match and best_match[1] >= 80:  # Adjust the threshold as needed
-            column = best_match[0]
-
-            # Retrieve the corresponding values from the dataframe
-            if best_match[0] in parameter1[0]['City'] :
-                values = df[df['City'] == best_match[0]]
-
-                response = values.to_json(orient='records')
-            if best_match[0] in parameter1[1]['Town'] :
-                values = df[df['Town'] == best_match[0]]
-                response = values.to_json(orient='records')
-
-        else:
-            response = False
-            return response
-    elif prompt == 'file' or prompt[-1] == 'file'  :
-        return 'Ok, Let\'s start work on your file, prompt your questions'
-    elif prompt[-1] == 'stop' :
-
-        return 'Thank you for your prompts'
-
-
-
-
-    return response
+df.drop(['geometry', 'time', 'date', 'location'], axis = 1, inplace = True)
 
 # Preprocess user input and modify conversation history
 def chatbot(prompt):
+    conversation = [
+        {
+            'role': 'system',
+            'content': 'You are a helpful assistant.'
+        },
+        {
+            'role': 'user',
+            'content': prompt
+        },
+        {
+            'role': 'assistant',
+            'content': ''
+        }
+    ]
 
-    if process_prompt (prompt, df):
-        response = process_prompt (prompt, df)
-        return response
+    # Convert the conversation to a string
+    chat_history = '\n'.join ([f'{message["role"]}: {message["content"]}' for message in conversation])
 
-    else:
-        print('it responses here')
+    print(chat_history)
 
-        if type(prompt) == str:
-            prompt = prompt
-        else :
-
-            prompt = ''.join (i for i in prompt[-1])
-            print('propt last', prompt)
-            completion = openai.Completion.create (
+    completion = openai.Completion.create (
                 engine=model_engine,
-                prompt=prompt,
+                prompt=chat_history,
                 max_tokens=1024,
                 n=1,
                 stop=None,
                 temperature=0.7,
             )
 
-        response = completion.choices[0].text.strip()
-        return response
+    response = completion.choices[0].text.strip()
+    # Split the response into lines
+    lines = response.split ('\n')
+
+    # Identify the code portion
+    code_lines = []
+    for line in lines:
+        if line.startswith ("import ") or line.startswith ("#") or line.startswith ("df['"):
+            code_lines.append (line)
+
+    # Extract the code and explanation
+    code = '\n'.join (code_lines)
+    explanation = response.replace (code, "").strip ()
+
+    return explanation, code

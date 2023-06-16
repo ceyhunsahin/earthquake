@@ -369,48 +369,51 @@ def toggle_modal(n1, is_open):
 
 # CHATGPT CONVERSATION
 
-def create_modal(x, question, response):
+def create_modal(x, question, explanation, code):
     lis = []
 
 
-    def should_display_as_code(question):
-        response = question.lower()
-        code_keyword = [ "code",  'snippet', 'python', 'function', 'basic', 'print', 'def', 'import']
-
-        if any(item in response.split(" ") for item in code_keyword):
-
-            return True
-
-    def validateJSON(response):
-        try:
-            print('it works')
-            json.loads (response)
-        except ValueError as err:
-            return False
-        return True
-
+    def generate_table(dataframe):
+        return html.Table ([
+                html.Thead (
+                    html.Tr ([html.Th (col) for col in dataframe.columns])
+                ),
+                html.Tbody ([
+                    html.Tr ([
+                        html.Td (dataframe.iloc[i][col]) for col in dataframe.columns
+                    ]) for i in range (len (dataframe))
+                ])
+            ], className="fl-table")
         # Add your logic here to determine whether the response should be displayed as code or explanation
 
     for i in range(x):
         # Check if the response should be displayed as code or explanation
-        if should_display_as_code(response[i]):
-            response_html = html.Pre(response[i], className='code-snippet')
-        elif validateJSON(response[i]):
-            json_file = json.loads(response[i])
-            print (len(json_file[0]))
-            df = pd.DataFrame(json_file[0], index = range(len(json_file[0])))
+        #if validateJSON(response[i]):
+            #json_file = json.loads(response[i])
+           # print (len(json_file[0]))
+            #df = pd.DataFrame(json_file[0], index = range(len(json_file[0])))
+           # print(df.columns)
 
-            response_html = dash_table.DataTable(df.to_dict('records'),[{"name": i, "id": i} for i in df.columns], id='tbl'),
-        else:
-            response_html = html.P("A: " + response[i],
-                                   style={
-                                       'width': '50rem',
-                                       'color': '#05336e',
-                                       'backgroundColor': '#fbe7b2',
-                                       'width': '80vh',
-                                       'border': '1px solid gray',
-                                       'border-radius': '5%'
-                                   })
+           # response_html = generate_table(df)
+        #else:
+        response_html = html.Div(
+                                children=[
+                                    # Explanation as plain text
+                                    html.Div(
+                                        children=explanation
+                                    ),
+                                    # Code as code snippet
+                                    html.Div(
+                                        children=html.Pre(
+                                            children=code,
+                                            style={ 'background-color': '#f8f8f8', 'padding': '10px',
+                                                    'border': '1px solid #ddd', 'display': 'none' } if code == '' else {
+                                                'background-color': '#f8f8f8', 'padding': '10px',
+                                                'border': '1px solid #ddd' }
+                                        )
+                                    )
+                                ]
+                            )
 
         lis.append(html.Div([
             html.P("Q: " + question[i], style={'color': 'black'}),
@@ -452,21 +455,25 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
 
         question.append(value1.title()) # add search bar question to question list ===>   ['']
 
-        response.append(chatbot(value1)) # add response, response of the search chat ===>  ['']
+        exp, code = chatbot(value1) # add response, response of the search chat ===>  ['']
+
 
         x = len(question)
 
-        return create_modal (x, question, response), question, response
+        return create_modal (x, question, exp, code), question, response
 
     if button_click == 'submit-button' :
 
         question.append (value2)
 
-        response.append(chatbot (question))
+        #final_val = ''.join (i for i in question)
+
+        exp, code = chatbot (value2)
+        print (response)
 
 
         x = len(question)
-        return create_modal (x, question, response), question, response
+        return create_modal (x, question, exp, code), question, response
 
     else:
         raise PreventUpdate
