@@ -17,6 +17,7 @@ model_engine = "text-davinci-003"
 
 df = pd.read_csv('earthquake.csv', index_col=0).sample(frac = 0.05)
 df.drop(['geometry', 'time', 'date', 'location'], axis = 1, inplace = True)
+print(df.info())
 
 # Preprocess user input and modify conversation history
 def chatbot(prompt):
@@ -38,7 +39,7 @@ def chatbot(prompt):
     # Convert the conversation to a string
     chat_history = '\n'.join ([f'{message["role"]}: {message["content"]}' for message in conversation])
 
-    print(chat_history)
+    print('chat_history',chat_history)
 
     completion = openai.Completion.create (
                 engine=model_engine,
@@ -50,17 +51,9 @@ def chatbot(prompt):
             )
 
     response = completion.choices[0].text.strip()
-    # Split the response into lines
-    lines = response.split ('\n')
+    print('this response is important', response)
 
-    # Identify the code portion
-    code_lines = []
-    for line in lines:
-        if line.startswith ("import ") or line.startswith ("#") or line.startswith ("df['"):
-            code_lines.append (line)
 
-    # Extract the code and explanation
-    code = '\n'.join (code_lines)
-    explanation = response.replace (code, "").strip ()
 
-    return explanation, code
+
+    return  response

@@ -369,7 +369,7 @@ def toggle_modal(n1, is_open):
 
 # CHATGPT CONVERSATION
 
-def create_modal(x, question, explanation, code):
+def create_modal(x, question, response):
     lis = []
 
 
@@ -396,18 +396,46 @@ def create_modal(x, question, explanation, code):
 
            # response_html = generate_table(df)
         #else:
+
+        import re
+
+        pattern = r"^(import|from|\w+)\s.*$"
+
+        # Split the response into lines
+        lines = response[i].split ('\n')
+        explanation = ""
+        code = ""
+
+        for line in lines:
+            if re.match (pattern, line.strip ()):
+                code += line + "\n"
+            else:
+                explanation += line + "\n"
+
+
+        # Identify the code portion
+        code_lines = []
+        for line in lines:
+            if line.startswith ("import ") or line.startswith ("#") or line.startswith ("df['") or line.startswith ("def"):
+                code_lines.append (line)
+
+        # Extract the code and explanation
+        #code = '\n'.join (code_lines)
+        #explanation = response[i].replace (code, "").strip ()
+
+        #print ('explanation, code', explanation + code)
         response_html = html.Div(
                                 children=[
                                     # Explanation as plain text
                                     html.Div(
-                                        children=explanation
+                                        children=html.P(explanation)
                                     ),
                                     # Code as code snippet
                                     html.Div(
                                         children=html.Pre(
                                             children=code,
                                             style={ 'background-color': '#f8f8f8', 'padding': '10px',
-                                                    'border': '1px solid #ddd', 'display': 'none' } if code == '' else {
+                                                    'border': '1px solid #ddd', 'display': 'none' } if code== '' else {
                                                 'background-color': '#f8f8f8', 'padding': '10px',
                                                 'border': '1px solid #ddd' }
                                         )
@@ -455,25 +483,30 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
 
         question.append(value1.title()) # add search bar question to question list ===>   ['']
 
-        exp, code = chatbot(value1) # add response, response of the search chat ===>  ['']
+        return_val = chatbot(value1) # add response, response of the search chat ===>  ['']
+        response.append(return_val)
 
 
         x = len(question)
 
-        return create_modal (x, question, exp, code), question, response
+        return create_modal (x, question, response), question, response
 
     if button_click == 'submit-button' :
 
         question.append (value2)
 
-        #final_val = ''.join (i for i in question)
+        print('question',question)
 
-        exp, code = chatbot (value2)
-        print (response)
+        final_val = ''.join (i for i in question)
+
+        return_val = chatbot (final_val)
+        response.append (return_val)
+
+        print ('response', response)
 
 
         x = len(question)
-        return create_modal (x, question, exp, code), question, response
+        return create_modal (x, question, response), question, response
 
     else:
         raise PreventUpdate
