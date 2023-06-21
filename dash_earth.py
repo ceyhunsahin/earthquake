@@ -2,6 +2,7 @@
 import dash
 import os
 import sys
+import subprocess
 import json
 import flask
 from dash import dash_table
@@ -22,6 +23,7 @@ from dash.exceptions import PreventUpdate
 from dash import Dash,dcc, html, State, Input, Output
 import dash_bootstrap_components as dbc
 import plotly.express as px
+import re
 
 # get data from csv file which was taken from http://www.koeri.boun.edu.tr/
 geo_df = pd.read_csv("earthquake.csv", index_col=0, low_memory=True)
@@ -30,6 +32,7 @@ geo_df = geo_df.sort_values(by = 'City')
 geo_df.reset_index(inplace=True, drop = True)
 geo_df['id'] = [i+1 for i in range(len(geo_df))]
 geo_df['lon'] = geo_df['long']
+
 
 ## downcasting loop
 for column in geo_df:
@@ -120,8 +123,9 @@ search_bar = dbc.Row(
                         dbc.ModalHeader ("ChatGPT"),
                         dbc.ModalBody (
                             html.Div (
-                                [dcc.Loading(id="loading-1",type="circle",children = [
+                                [
                                     html.Div (id="conversation-container",children = [], className="conversation-container"),
+
                                     html.Div (
                                         [
                                             dcc.Input (
@@ -132,20 +136,26 @@ search_bar = dbc.Row(
 
                                                 className="user-input",
                                             ),
-                                            dbc.Button ("Send", id="submit-button", color='primary', className="me-1"),
+                                            dbc.Col([dbc.Button ("Send", id="submit-button", color='primary', className="me-1"),
+                                                     dbc.Button ("Run code in Python", id='run-py',
+                                                        color="warning", className="me-1", n_clicks=0
+                                                        ),], style={'display':'Flex', 'flexDirection': 'column'}),
+
+                                            html.Div (id='textarea-container'),
                                         ],
                                         className="input-container",
                                     ),
-                                ])],
+                                ],
                                 id = 'QA_values', className="chat-container",
-                            )
+                            ), loading_state ={'is_loading' : True},
                         ),
                     ],
                     id="modal-lg",
                     is_open=False,
                     size="lg",
                     style={'height': "60vh"},
-                    scrollable=True
+                    scrollable=True,
+
                 ),
             ]
         ),
@@ -166,6 +176,47 @@ search_bar = dbc.Row(
     className="g-0 ms-auto flex-nowrap mt-3 mt-md-0",
     align="center",
 )
+###########################################################################################
+
+
+@app.callback(
+    Output('textarea-container', 'children'),
+    [Input('run-py', 'n_clicks')]
+)
+def show_textarea(n_clicks):
+    if n_clicks > 0:
+        return html.Div([
+            dcc.Textarea(id='code-input', placeholder='Paste your Python code here...', rows=10, cols=80),
+            html.Button('Run', id='run-code', n_clicks=0),
+            html.Div(id='output-container')
+        ])
+    else:
+        return html.Div()
+
+# Define the callback to execute the code when the 'run-code' button is clicked
+@app.callback(
+    Output('output-container', 'children'),
+    [Input('run-code', 'n_clicks')],
+    [State('code-input', 'value')]
+)
+def execute_python_code(n_clicks, code):
+    if n_clicks > 0 and code:
+        try:
+            result = subprocess.run(['python', '-c', code], capture_output=True, text=True)
+            if result.returncode == 0:
+                return html.Pre(result.stdout)
+            else:
+                return html.Pre(result.stderr)
+        except Exception as e:
+            return html.Pre(str(e))
+    else:
+        return html.Pre()
+
+
+
+
+
+
 
 navbar = dbc.Navbar(
     dbc.Container(
@@ -386,69 +437,40 @@ def create_modal(x, question, response):
             ], className="fl-table")
         # Add your logic here to determine whether the response should be displayed as code or explanation
 
-    for i in range(x):
-        # Check if the response should be displayed as code or explanation
-        #if validateJSON(response[i]):
-            #json_file = json.loads(response[i])
-           # print (len(json_file[0]))
-            #df = pd.DataFrame(json_file[0], index = range(len(json_file[0])))
-           # print(df.columns)
+    for i in range(2, x):
 
-           # response_html = generate_table(df)
-        #else:
-
-        import re
-
-        pattern = r"^(import|from|\w+)\s.*$"
-
-        # Split the response into lines
-        lines = response[i].split ('\n')
-        explanation = ""
-        code = ""
-
-        for line in lines:
-            if re.match (pattern, line.strip ()):
-                code += line + "\n"
-            else:
-                explanation += line + "\n"
+        # Define the regex pattern
+        pattern = r"code:\n(.*?)\n| ```python:\n(.*?)\n```"
+        code = ''
 
 
-        # Identify the code portion
-        code_lines = []
-        for line in lines:
-            if line.startswith ("import ") or line.startswith ("#") or line.startswith ("df['") or line.startswith ("def"):
-                code_lines.append (line)
-
-        # Extract the code and explanation
-        #code = '\n'.join (code_lines)
-        #explanation = response[i].replace (code, "").strip ()
-
-        #print ('explanation, code', explanation + code)
         response_html = html.Div(
                                 children=[
                                     # Explanation as plain text
                                     html.Div(
-                                        children=html.P(explanation)
+                                        children=html.Code(response[i]), style={'white-space': 'pre-wrap', 'overflow': 'auto','width': '80vh','padding': '10px','margin': '10px'}
                                     ),
                                     # Code as code snippet
                                     html.Div(
-                                        children=html.Pre(
-                                            children=code,
-                                            style={ 'background-color': '#f8f8f8', 'padding': '10px',
+                                        children=html.Code(html.Pre(children=code,
+
+                                            style={ 'background-color': '#f8f8f8', 'padding': '10px','margin': '10px',
                                                     'border': '1px solid #ddd', 'display': 'none' } if code== '' else {
-                                                'background-color': '#f8f8f8', 'padding': '10px',
-                                                'border': '1px solid #ddd' }
+                                                    'background-color': '#f8f8f8', 'margin': '10px',
+                                                    'border': '1px solid #ddd' }),
                                         )
                                     )
-                                ]
+                                ], className='response_html_design'
                             )
 
         lis.append(html.Div([
-            html.P("Q: " + question[i], style={'color': 'black'}),
+            html.P("Q: " + question[i], style={'color': 'black','overflow': 'auto'}),
             html.Hr(),
             response_html,
-            html.Hr()
-        ]))
+            html.Hr(),
+
+
+        ], className='conversation-container'))
 
     return lis
 
@@ -474,10 +496,30 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
     ctx = dash.callback_context
     button_click = ctx.triggered[0]["prop_id"].split (".")[0]
 
+    dicts = "{'depth': 'float64','lat': 'float64', 'long': 'float64',\
+             'location': 'object', 'magnitude': 'float64',\
+             'date_and_time': 'object', 'date': 'object', 'time': 'object',\
+             'geometry': 'object', 'City': 'object', 'Town': 'object',\
+             'id': 'int64', 'lon': 'float64'}"
+
+    val1 = 'You are a Python tutor teaching me the Pandas library. I will be asking you how to do ' \
+           'a particular task with Pandas and expecting you to explain it to me. ' \
+           'Also show me the code along with your explanation. my file name is earthquake.csv'
+    val2 = 'Let me first tell you about the DataFrame I have. Then, I will start asking questions. ' \
+           'The columns and their data types are given below as a Python dictionary with ' \
+           f'keys showing column names and values showing the data types.{dicts} ' \
+           'The responds will be always code, i dont want you to show me the information except the dataframe,' \
+           ' when i say manisa city this means that city name is manisa'
 
 
-    if is_open == False :
-        question, response = [], []
+
+    if is_open==False :
+        question.append(val1)
+        response.append (chatbot (val1))
+        question.append (val2)
+        response.append (chatbot (val2))
+
+
 
     if button_click == 'search' :
 
@@ -492,7 +534,6 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
         return create_modal (x, question, response), question, response
 
     if button_click == 'submit-button' :
-
         question.append (value2)
 
         print('question',question)
