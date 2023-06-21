@@ -16,8 +16,7 @@ model_engine = "text-davinci-003"
 #nlp = spacy.load ("en_core_web_sm")
 
 df = pd.read_csv('earthquake.csv', index_col=0).sample(frac = 0.05)
-df.drop(['geometry', 'time', 'date', 'location'], axis = 1, inplace = True)
-print(df.info())
+
 
 # Preprocess user input and modify conversation history
 def chatbot(prompt):
@@ -39,8 +38,6 @@ def chatbot(prompt):
     # Convert the conversation to a string
     chat_history = '\n'.join ([f'{message["role"]}: {message["content"]}' for message in conversation])
 
-    print('chat_history',chat_history)
-
     completion = openai.Completion.create (
                 engine=model_engine,
                 prompt=chat_history,
@@ -48,12 +45,12 @@ def chatbot(prompt):
                 n=1,
                 stop=None,
                 temperature=0.7,
+                top_p=0.3,
+                frequency_penalty=0.5,
+                presence_penalty=0.0
             )
 
     response = completion.choices[0].text.strip()
-    print('this response is important', response)
-
-
 
 
     return  response
