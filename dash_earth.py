@@ -34,6 +34,8 @@ geo_df['id'] = [i+1 for i in range(len(geo_df))]
 geo_df['lon'] = geo_df['long']
 
 
+
+
 ## downcasting loop
 for column in geo_df:
     if geo_df[column].dtype == 'float64':
@@ -41,8 +43,6 @@ for column in geo_df:
     if geo_df[column].dtype == 'int64':
         geo_df[column]=pd.to_numeric(geo_df[column], downcast='integer')
 
-## dropping an unused column
-geo_df = geo_df.drop('geometry',axis =1)
 
 mapbox_access_token = 'pk.eyJ1IjoiY2V5aHVuMjA4NiIsImEiOiJjbGZiaTJ4MXoya2diM3RvMTBic3N3Y3A5In0._4OoIx3hlf1l0eEeiCnSRQ'
 
@@ -122,6 +122,7 @@ search_bar = dbc.Row(
                     [
                         dbc.ModalHeader ("ChatGPT"),
                         dbc.ModalBody (
+
                             html.Div (
                                 [
                                     html.Div (id="conversation-container",children = [], className="conversation-container"),
@@ -141,19 +142,20 @@ search_bar = dbc.Row(
                                                         color="warning", className="me-1", n_clicks=0
                                                         ),], style={'display':'Flex', 'flexDirection': 'column'}),
 
-                                            html.Div (id='textarea-container'),
+
                                         ],
                                         className="input-container",
                                     ),
+                                    html.Div (id='textarea-container'),
                                 ],
                                 id = 'QA_values', className="chat-container",
-                            ), loading_state ={'is_loading' : True},
+                            ),
                         ),
                     ],
                     id="modal-lg",
                     is_open=False,
                     size="lg",
-                    style={'height': "60vh"},
+                    style={'height': "70vh"},
                     scrollable=True,
 
                 ),
@@ -186,12 +188,14 @@ search_bar = dbc.Row(
 def show_textarea(n_clicks):
     if n_clicks > 0:
         return html.Div([
-            dcc.Textarea(id='code-input', placeholder='Paste your Python code here...', rows=10, cols=80),
-            html.Button('Run', id='run-code', n_clicks=0),
+            dcc.Textarea(id='code-input', placeholder='Paste your Python code here...', rows=20, cols=80),
+            dbc.Button('Run', id='run-code', color= 'success',n_clicks=0),
             html.Div(id='output-container')
         ])
     else:
         return html.Div()
+
+
 
 # Define the callback to execute the code when the 'run-code' button is clicked
 @app.callback(
@@ -200,8 +204,15 @@ def show_textarea(n_clicks):
     [State('code-input', 'value')]
 )
 def execute_python_code(n_clicks, code):
-    if n_clicks > 0 and code:
+
+    print(code)
+    ctx = dash.callback_context
+    button_click = ctx.triggered[0]["prop_id"].split (".")[0]
+    print(button_click)
+
+    if button_click== 'run-code' and code:
         try:
+            print('burda miyiz')
             result = subprocess.run(['python', '-c', code], capture_output=True, text=True)
             if result.returncode == 0:
                 return html.Pre(result.stdout)
@@ -424,17 +435,7 @@ def create_modal(x, question, response):
     lis = []
 
 
-    def generate_table(dataframe):
-        return html.Table ([
-                html.Thead (
-                    html.Tr ([html.Th (col) for col in dataframe.columns])
-                ),
-                html.Tbody ([
-                    html.Tr ([
-                        html.Td (dataframe.iloc[i][col]) for col in dataframe.columns
-                    ]) for i in range (len (dataframe))
-                ])
-            ], className="fl-table")
+
         # Add your logic here to determine whether the response should be displayed as code or explanation
 
     for i in range(2, x):
@@ -444,11 +445,12 @@ def create_modal(x, question, response):
         code = ''
 
 
-        response_html = html.Div(
+        response_html = dcc.Loading ([
+                            html.Div(
                                 children=[
                                     # Explanation as plain text
                                     html.Div(
-                                        children=html.Code(response[i]), style={'white-space': 'pre-wrap', 'overflow': 'auto','width': '80vh','padding': '10px','margin': '10px'}
+                                        children=html.Code(response[i]), style={'white-space': 'pre-wrap', 'overflow': 'auto','width': '60vh','padding': '10px','margin': '10px'}
                                     ),
                                     # Code as code snippet
                                     html.Div(
@@ -461,7 +463,7 @@ def create_modal(x, question, response):
                                         )
                                     )
                                 ], className='response_html_design'
-                            )
+                            )])
 
         lis.append(html.Div([
             html.P("Q: " + question[i], style={'color': 'black','overflow': 'auto'}),
@@ -496,6 +498,18 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
     ctx = dash.callback_context
     button_click = ctx.triggered[0]["prop_id"].split (".")[0]
 
+    def generate_table(dataframe):
+        return html.Table ([
+                html.Thead (
+                    html.Tr ([html.Th (col) for col in dataframe.columns])
+                ),
+                html.Tbody ([
+                    html.Tr ([
+                        html.Td (dataframe.iloc[i][col]) for col in dataframe.columns
+                    ]) for i in range (len (dataframe))
+                ])
+            ], className="fl-table")
+
     dicts = "{'depth': 'float64','lat': 'float64', 'long': 'float64',\
              'location': 'object', 'magnitude': 'float64',\
              'date_and_time': 'object', 'date': 'object', 'time': 'object',\
@@ -504,12 +518,16 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
 
     val1 = 'You are a Python tutor teaching me the Pandas library. I will be asking you how to do ' \
            'a particular task with Pandas and expecting you to explain it to me. ' \
-           'Also show me the code along with your explanation. my file name is earthquake.csv'
+           'Also show me the code along with your explanation. '
     val2 = 'Let me first tell you about the DataFrame I have. Then, I will start asking questions. ' \
            'The columns and their data types are given below as a Python dictionary with ' \
            f'keys showing column names and values showing the data types.{dicts} ' \
-           'The responds will be always code, i dont want you to show me the information except the dataframe,' \
-           ' when i say manisa city this means that city name is manisa'
+            'my file name is earthquake.csv and always use this file as pd.read_csv(earthquake.csv)' \
+           'The responds will be always code without # explanation, i dont want you to show me the information except my data' \
+           ' when i say manisa city this means that city name is manisa. When i want you to give me a table ' \
+           'use table format as mentioned as above generate_table' \
+
+
 
 
 
@@ -523,7 +541,7 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
 
     if button_click == 'search' :
 
-        question.append(value1.title()) # add search bar question to question list ===>   ['']
+        question.append(value1.capitalize()) # add search bar question to question list ===>   ['']
 
         return_val = chatbot(value1) # add response, response of the search chat ===>  ['']
         response.append(return_val)
@@ -534,11 +552,13 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
         return create_modal (x, question, response), question, response
 
     if button_click == 'submit-button' :
-        question.append (value2)
+
 
         print('question',question)
 
         final_val = ''.join (i for i in question)
+
+        question.append (value2)
 
         return_val = chatbot (final_val)
         response.append (return_val)

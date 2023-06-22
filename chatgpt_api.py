@@ -12,7 +12,7 @@ OPENAI_MdP = os.getenv('OPENAI_MdP')
 openai.api_key = OPENAI_MdP
 
 # Set up the model and prompt
-model_engine = "text-davinci-003"
+model_engine = "text-davinci-002"
 #nlp = spacy.load ("en_core_web_sm")
 
 df = pd.read_csv('earthquake.csv', index_col=0).sample(frac = 0.05)
@@ -51,6 +51,8 @@ def chatbot(prompt):
             )
 
     response = completion.choices[0].text.strip()
+
+    print(response)
 
 
     return  response
