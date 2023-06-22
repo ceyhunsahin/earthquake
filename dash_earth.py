@@ -205,14 +205,11 @@ def show_textarea(n_clicks):
 )
 def execute_python_code(n_clicks, code):
 
-    print(code)
     ctx = dash.callback_context
     button_click = ctx.triggered[0]["prop_id"].split (".")[0]
-    print(button_click)
 
     if button_click== 'run-code' and code:
         try:
-            print('burda miyiz')
             result = subprocess.run(['python', '-c', code], capture_output=True, text=True)
             if result.returncode == 0:
                 return html.Pre(result.stdout)
@@ -554,7 +551,6 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
     if button_click == 'submit-button' :
 
 
-        print('question',question)
 
         final_val = ''.join (i for i in question)
 
@@ -563,7 +559,6 @@ def chatgpt_conversation(value1, nc, nc2, value2, question, response, is_open ):
         return_val = chatbot (final_val)
         response.append (return_val)
 
-        print ('response', response)
 
 
         x = len(question)
@@ -712,7 +707,6 @@ def update_graph3(value1,value2, value3, value4, radio, checked, pitch, bearing)
 
     if radio == 'hexagon_layer':
 
-        print(df)
         from tqdm.auto import tqdm, trange
         from time import sleep
 
@@ -747,7 +741,6 @@ def update_graph3(value1,value2, value3, value4, radio, checked, pitch, bearing)
         fig = dash_deck.DeckGL(r.to_json(), id="deck-gl",tooltip={"text": "{position}\nMagnitude: {magnitude}"},
                                mapboxKey=mapbox_access_token,style={"width": "50vw", "height": "40vh"})
 
-        print(fig)
 
 
         return {},{'display': 'None' },fig,fb(df, value1,checked),{'visibility':'visible'}
