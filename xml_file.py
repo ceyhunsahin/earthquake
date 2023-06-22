@@ -95,7 +95,6 @@ df['date_and_time'] = pd.to_datetime(df['date_and_time'])
 df['date'] = df['date_and_time'].dt.date
 df['time'] = df['date_and_time'].dt.time
 
-df['geometry'] = df['lat'] + df['long']
 
 # separate location with city and town
 
@@ -128,7 +127,8 @@ df = df[df['City'] != '']
 df = df[~df['City'].str.contains('Otomatik')]
 df = df[~df['magnitude'].str.contains('-.-')]
 
-
+df['City'] = df['City'].apply(lambda x : x.title())
+df['Town'] = df['Town'].apply(lambda x : x.title())
 df.to_csv('earthquake.csv')
 
 print('Get value of Bou earthquake info et loaded pandas')
